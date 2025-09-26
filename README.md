@@ -87,10 +87,11 @@ package management, and Termux:API commands:
 terdex termux
 ```
 
-Request a specific section or machine-readable output:
+Request a specific section—such as the new desktop environment guide—or
+machine-readable output:
 
 ```bash
-terdex termux --section package-management --json
+terdex termux --section desktop --json
 ```
 
 Produce machine-readable output instead of the formatted summary and step list:

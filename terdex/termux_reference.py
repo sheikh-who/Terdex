@@ -172,6 +172,65 @@ TERMUX_REFERENCE: List[TermuxSection] = [
             ]
         ),
     ),
+    TermuxSection(
+        key="desktop",
+        title="Desktop Environments",
+        summary=(
+            "Install XFCE, LXQt, MATE, or Openbox within Termux and launch them through a VNC session for a full graphical desktop."
+        ),
+        entries=_entries(
+            [
+                (
+                    "XFCE",
+                    "pkg install xfce4, then set ~/.vnc/xstartup to run 'xfce4-session &' before starting the VNC server.",
+                ),
+                (
+                    "LXQt",
+                    "pkg install lxqt and use a minimal ~/.vnc/xstartup containing 'startlxqt &' to launch the session.",
+                ),
+                (
+                    "MATE",
+                    "Install the mate-* meta packages plus marco, then start VNC sessions with 'mate-session &' in ~/.vnc/xstartup.",
+                ),
+                (
+                    "Recommended apps",
+                    "Add lightweight browsers (netsurf or otter-browser) and terminals (xfce4-terminal, qterminal, mate-terminal) for each desktop.",
+                ),
+                (
+                    "Openbox",
+                    "Keep ~/.vnc/xstartup limited to the openbox-session launch and customise ${PREFIX}/etc/xdg/openbox/autostart for panels like PyPanel.",
+                ),
+            ]
+        ),
+    ),
+    TermuxSection(
+        key="x11",
+        title="Termux X11 Packages",
+        summary=(
+            "Enable the x11-repo, use a VNC server for display output, and explore desktop packages or build scripts maintained by the community."
+        ),
+        entries=_entries(
+            [
+                ("Enable repository", "Run pkg install x11-repo to add the official X11 packages."),
+                (
+                    "VNC setup",
+                    "Install tigervnc, start the server locally, and connect with a VNC viewer to render graphical apps.",
+                ),
+                (
+                    "Xstartup basics",
+                    "Keep ~/.vnc/xstartup minimal—usually just the desktop session command—to avoid conflicts.",
+                ),
+                (
+                    "Build locally",
+                    "Clone https://github.com/termux/x11-packages and use ./start-builder.sh then ./build-package.sh -a <arch> <package> to compile extras.",
+                ),
+                (
+                    "Hardware notes",
+                    "Hardware acceleration is generally unavailable by default when running X11 via VNC inside Termux.",
+                ),
+            ]
+        ),
+    ),
 ]
 
 

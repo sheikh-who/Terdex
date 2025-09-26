@@ -66,4 +66,36 @@ Additional options inside `~/.termux/termux.properties` help tailor the UI:
 - `enforce-char-based-input=true` works around keyboards that inject words instead of characters.
 - `terminal-margin-horizontal=6` adjusts horizontal padding to avoid clipped edges.
 
+## Desktop Environments
+
+Run full graphical desktops through a local VNC server. Keep `~/.vnc/xstartup`
+minimal—just the command that launches the desktop session—and manage the rest
+via each environment's autostart hooks.
+
+- **XFCE:** `pkg install xfce4` then populate `~/.vnc/xstartup` with
+  `#!/data/data/com.termux/files/usr/bin/sh` and `xfce4-session &`.
+  Add tools like `netsurf` or `xfce4-terminal` for a friendlier desktop.
+- **LXQt:** Install with `pkg install lxqt` and configure
+  `startlxqt &` in the xstartup file. Pair with `otter-browser` and `qterminal`.
+- **MATE:** Install `pkg install mate-* marco` and start the session with
+  `mate-session &`. Bring in `netsurf` or `mate-terminal` as needed.
+- **Openbox:** Launch using `openbox-session &` in `~/.vnc/xstartup` and manage
+  panels or wallpaper via `${PREFIX}/etc/xdg/openbox/autostart`
+  (e.g. launching `pypanel` or setting the background).
+
+## Termux X11 Packages
+
+The community-maintained X11 repository unlocks additional desktop packages.
+
+- Enable the repository with `pkg install x11-repo` (Android 7+).
+- Use `pkg install tigervnc` and connect with your favourite VNC viewer to see
+  graphical output.
+- Keep `~/.vnc/xstartup` trimmed to just the session launch command to avoid
+  conflicting daemons.
+- Build or customise packages by cloning
+  `https://github.com/termux/x11-packages`, running `./start-builder.sh`, and
+  executing `./build-package.sh -a <arch> <package>`.
+- Note that hardware acceleration is typically unavailable within these VNC
+  environments, so expect software rendering.
+
 Consult the official [Termux Wiki](https://wiki.termux.com/) for deeper dives.

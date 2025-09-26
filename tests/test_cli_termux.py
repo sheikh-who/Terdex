@@ -30,3 +30,11 @@ def test_termux_command_unknown_section(capsys):
     assert command_termux(args) == 1
     captured = capsys.readouterr().out
     assert "Unknown section" in captured
+
+
+def test_termux_command_desktop_section(capsys):
+    args = SimpleNamespace(section="desktop", json=False)
+    assert command_termux(args) == 0
+    captured = capsys.readouterr().out
+    assert "Desktop Environments" in captured
+    assert "xfce4-session" in captured
