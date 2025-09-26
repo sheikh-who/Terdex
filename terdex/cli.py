@@ -32,6 +32,19 @@ DEFAULT_CONFIG = {
     },
 }
 
+CHAIN_OF_THOUGHT_PROMPTS = [
+    "Act as a productivity coach. Create a structured, time-blocked schedule for a project manager juggling meetings, deep work, and admin tasks.",
+    "Step by step, outline a project timeline for launching a new product. Include key milestones, potential roadblocks, and solutions.",
+    "Organize this to-do list into high-priority and low-priority tasks.",
+    "Suggest a workflow automation strategy for a marketing team handling multiple campaigns.",
+    "Act as a project manager. Design a simple workflow for handling customer complaints efficiently.",
+    "Analyze this weekly schedule and suggest ways to increase efficiency without compromising work quality.",
+    "Act as a time management expert. Given a workload of 10+ daily tasks, multiple deadlines, and frequent interruptions, suggest a structured prioritization method to ensure high-impact tasks are completed first while minimizing stress and decision fatigue.",
+    "Act as an executive coach. Provide a 5-minute morning reflection exercise to help me set clear priorities and focus on high-impact work.",
+    "Act as a time management expert. I have five urgent tasks, but only time for three. Provide a prioritization framework to decide which to complete first.",
+    "My to-do list keeps growing, and I feel like I'm always behind. Suggest a method to ensure I stay proactive instead of reactive.",
+]
+
 
 @dataclass
 class AppConfig:
@@ -438,6 +451,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also show available playbooks",
     )
 
+    prompts_parser = subparsers.add_parser(
+        "prompts", help="List chain-of-thought prompt ideas for smarter planning"
+    )
+    prompts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the prompts as JSON for downstream tooling",
+    )
+
     return parser
 
 
@@ -518,6 +540,28 @@ def command_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_prompts(args: argparse.Namespace) -> int:
+    if args.json:
+        payload = {
+            "title": "Chain-of-thought prompts for smarter decision-making",
+            "prompts": CHAIN_OF_THOUGHT_PROMPTS,
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    intro = textwrap.dedent(
+        """
+        Chain-of-thought prompt ideas for smarter decision-making and productivity.
+        Use these with `terdex plan --chain-of-thought` to encourage step-by-step reasoning.
+        """
+    ).strip()
+    print(intro)
+    print("")
+    for index, prompt in enumerate(CHAIN_OF_THOUGHT_PROMPTS, start=1):
+        print(f"{index}. {prompt}")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -527,6 +571,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "plan": command_plan,
         "run": command_run,
         "show": command_show,
+        "prompts": command_prompts,
     }
     return commands[args.command](args)
 

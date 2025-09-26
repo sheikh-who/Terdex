@@ -54,6 +54,19 @@ arrives from the local Ollama runtime. Pass `--chain-of-thought` if you want the
 model to think step-by-step before emitting the final JSON payload (useful for
 more complex tasks).
 
+Browse ready-made chain-of-thought prompt ideas tailored for productivity and
+decision-making workflows:
+
+```bash
+terdex prompts
+```
+
+Output the same list in JSON (useful for scripting or feeding into other tools):
+
+```bash
+terdex prompts --json
+```
+
 Produce machine-readable output instead of the formatted summary and step list:
 
 ```bash
