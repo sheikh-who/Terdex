@@ -40,6 +40,12 @@ Prefer a single-file installer? Run the helper script:
 python scripts/install_terdex.py --with-color --with-ollama
 ```
 
+Need a shell-friendly wrapper? Use the executable installer instead:
+
+```bash
+scripts/installer.sh --with-color --with-ollama
+```
+
 ## Usage
 
 Initialize Terdex in your project directory:
