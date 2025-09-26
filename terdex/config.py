@@ -11,7 +11,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 CONFIG_FILE = ".terdex.json"
 DEFAULT_CONFIG = {
@@ -26,7 +26,32 @@ DEFAULT_CONFIG = {
             "pytest",
         ],
     },
+    "llm": {
+        "provider": "heuristic",
+        "model": "",
+        "api_base": "",
+        "api_key_env": "",
+        "options": {},
+    },
 }
+
+
+@dataclass
+class LLMSettings:
+    """Configuration describing the preferred language model provider.
+
+    :param provider: Identifier for the integration to use (heuristic, ollama, openrouter, etc.).
+    :param model: Optional default model identifier for the provider.
+    :param api_base: Optional base URL overriding the provider default.
+    :param api_key_env: Name of an environment variable that stores the secret key.
+    :param options: Additional provider-specific parameters to pass through.
+    """
+
+    provider: str = "heuristic"
+    model: Optional[str] = None
+    api_base: Optional[str] = None
+    api_key_env: Optional[str] = None
+    options: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -37,12 +62,14 @@ class AppConfig:
     :param profile: Active profile name for display purposes.
     :param workspace: Directory path used for per-project workspaces.
     :param playbooks: Mapping of playbook names to ordered shell commands.
+    :param llm: Provider preferences for plan generation.
     """
 
     path: Path
     profile: str = "default"
     workspace: Path = Path("workspace")
     playbooks: Dict[str, List[str]] = field(default_factory=dict)
+    llm: LLMSettings = field(default_factory=LLMSettings)
 
     @classmethod
     def load(cls, directory: Path) -> "AppConfig":
@@ -65,11 +92,24 @@ class AppConfig:
             name: list(commands)
             for name, commands in data.get("playbooks", {}).items()
         }
+        llm_data = data.get("llm", {})
+        llm_options = {
+            key: str(value)
+            for key, value in llm_data.get("options", {}).items()
+            if isinstance(key, str) and isinstance(value, (str, int, float, bool))
+        }
         return cls(
             path=config_path,
             profile=data.get("profile", "default"),
             workspace=workspace,
             playbooks=playbooks,
+            llm=LLMSettings(
+                provider=str(llm_data.get("provider", "heuristic")),
+                model=(llm_data.get("model") or None),
+                api_base=(llm_data.get("api_base") or None),
+                api_key_env=(llm_data.get("api_key_env") or None),
+                options=llm_options,
+            ),
         )
 
     @classmethod
@@ -101,6 +141,13 @@ class AppConfig:
                     "profile": self.profile,
                     "workspace": str(self.workspace),
                     "playbooks": self.playbooks,
+                    "llm": {
+                        "provider": self.llm.provider,
+                        "model": self.llm.model or "",
+                        "api_base": self.llm.api_base or "",
+                        "api_key_env": self.llm.api_key_env or "",
+                        "options": self.llm.options,
+                    },
                 },
                 indent=2,
             )

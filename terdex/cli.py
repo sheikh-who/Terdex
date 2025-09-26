@@ -13,6 +13,7 @@ from .ollama_support import OllamaUnavailableError
 from .planner import Plan, PlanStep, generate_plan
 from .playbooks import execute_playbook
 from .plugins.confetti import celebrate_success
+from .providers import ProviderUnavailableError
 from .termux_reference import TERMUX_REFERENCE, lookup_section
 
 __all__ = [
@@ -110,12 +111,44 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-steps", type=int, default=None, help="Limit the number of generated steps"
     )
     plan_parser.add_argument(
+        "--provider",
+        choices=["heuristic", "ollama", "openrouter", "gemini", "cohere", "huggingface"],
+        help="Language model provider used to generate plans",
+    )
+    plan_parser.add_argument(
+        "--model",
+        help="Model identifier for the selected provider",
+    )
+    plan_parser.add_argument(
         "--ollama-model",
         dest="ollama_model",
         default=None,
         help=(
-            "Use a local Ollama model to draft the plan. Requires the `ollama` package and daemon."
+            "Backwards compatible alias for selecting an Ollama model. "
+            "Requires the `ollama` package and daemon."
         ),
+    )
+    plan_parser.add_argument(
+        "--api-base",
+        dest="api_base",
+        help="Override the provider API base URL",
+    )
+    plan_parser.add_argument(
+        "--api-key",
+        dest="api_key",
+        help="Explicit API key for remote providers (use env vars for security)",
+    )
+    plan_parser.add_argument(
+        "--api-key-env",
+        dest="api_key_env",
+        help="Environment variable name that stores the provider API key",
+    )
+    plan_parser.add_argument(
+        "--option",
+        dest="provider_options",
+        action="append",
+        default=None,
+        help="Additional provider option as key=value (may be repeated)",
     )
     plan_parser.add_argument(
         "--stream",
@@ -198,15 +231,52 @@ def command_init(args: argparse.Namespace) -> int:
 
 def command_plan(args: argparse.Namespace) -> int:
     description = " ".join(args.description)
+    config = None
+    try:
+        config = AppConfig.load(args.config)
+    except FileNotFoundError:
+        config = None
+
+    provider = args.provider or (config.llm.provider if config else None)
+    model = args.model or args.ollama_model or (config.llm.model if config else None)
+    options = {}
+
+    if config:
+        options.update(config.llm.options)
+        if config.llm.api_base:
+            options.setdefault("api_base", config.llm.api_base)
+        if config.llm.api_key_env:
+            options.setdefault("api_key_env", config.llm.api_key_env)
+
+    if args.api_base:
+        options["api_base"] = args.api_base
+    if args.api_key_env:
+        options["api_key_env"] = args.api_key_env
+    if args.api_key:
+        options["api_key"] = args.api_key
+
+    if args.provider_options:
+        for raw_option in args.provider_options:
+            if "=" not in raw_option:
+                print(f"Invalid --option '{raw_option}'. Use key=value format.")
+                return 1
+            key, value = raw_option.split("=", 1)
+            options[key.strip()] = value.strip()
+
+    resolved_provider = provider or ("ollama" if args.ollama_model else "heuristic")
+
     try:
         plan = generate_plan(
             description,
             max_steps=args.max_steps,
-            ollama_model=args.ollama_model,
+            provider=resolved_provider,
+            model=model,
             stream=args.stream,
+            provider_options=options or None,
+            ollama_model=args.ollama_model,
             chain_of_thought=args.chain_of_thought,
         )
-    except OllamaUnavailableError as exc:
+    except (OllamaUnavailableError, ProviderUnavailableError) as exc:
         print(exc)
         return 1
     if plan.is_empty():
@@ -259,6 +329,13 @@ def command_show(args: argparse.Namespace) -> int:
         f"Workspace: {config.workspace}",
         f"Detected Termux: {'yes' if detect_termux() else 'no'}",
     ]
+    environment_lines.append(f"LLM provider: {config.llm.provider}")
+    if config.llm.model:
+        environment_lines.append(f"LLM model: {config.llm.model}")
+    if config.llm.api_base:
+        environment_lines.append(f"LLM API base: {config.llm.api_base}")
+    if config.llm.api_key_env:
+        environment_lines.append(f"LLM API key env: {config.llm.api_key_env}")
     print("\n".join(environment_lines))
     if args.playbooks:
         print("\nPlaybooks:")

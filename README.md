@@ -68,6 +68,20 @@ JSON that Terdex converts into the familiar numbered steps:
 terdex plan --ollama-model gemma3 "optimize python data pipeline"
 ```
 
+Remote providers are supported as well. Configure an API key through an environment
+variable and request a free developer model from OpenRouter (or another
+OpenAI-compatible endpoint):
+
+```bash
+export OPENROUTER_API_KEY=your-token
+terdex plan --provider openrouter --model meta/llama-3.1-8b-instruct \
+  --api-key-env OPENROUTER_API_KEY "summarize the onboarding docs"
+```
+
+Pass `--api-base` to target hosted alternatives or Hugging Face Inference, and use
+`--option key=value` for provider-specific flags. Gemini and Cohere adapters are
+available with their respective API keys via `--provider gemini` or `--provider cohere`.
+
 Add `--stream` to the command to print the model's response incrementally as it
 arrives from the local Ollama runtime. Pass `--chain-of-thought` if you want the
 model to think step-by-step before emitting the final JSON payload (useful for
@@ -141,11 +155,18 @@ terdex show --playbooks
     "run-tests": [
       "pytest"
     ]
+  },
+  "llm": {
+    "provider": "heuristic",
+    "model": "",
+    "api_base": "",
+    "api_key_env": "",
+    "options": {}
   }
 }
 ```
 
-Modify playbooks to suit your workflow. Use `--dry-run` when executing to preview commands without running them.
+Modify playbooks to suit your workflow. Use `--dry-run` when executing to preview commands without running them. Update the `llm` section to set the default provider (e.g. `ollama`, `openrouter`, `gemini`, `cohere`, or `huggingface`) and supply an environment variable for API keys so secrets never touch disk.
 
 ## Development
 

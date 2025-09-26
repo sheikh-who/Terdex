@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Mapping, Optional
 
 from .config import detect_termux
-from .ollama_support import request_plan_from_ollama
+from .providers import request_plan_from_provider
 
 
 @dataclass
@@ -95,21 +95,32 @@ def generate_plan(
     description: str,
     max_steps: Optional[int] = None,
     *,
-    ollama_model: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
     stream: bool = False,
+    provider_options: Optional[Dict[str, str]] = None,
+    ollama_model: Optional[str] = None,
     ollama_chat_fn: Optional[Callable[..., object]] = None,
     chain_of_thought: bool = False,
+    http_post: Optional[Callable[[str, bytes, Mapping[str, str]], str]] = None,
 ) -> Plan:
     """Return an actionable plan for ``description``.
 
     :param description: Natural language task description supplied by the user.
     :param max_steps: Optional cap on the number of generated steps.
-    :param ollama_model: Name of the Ollama model to query when available.
-    :param stream: Whether the Ollama client should stream responses.
+    :param provider: Provider identifier (e.g. heuristic, ollama, openrouter).
+    :param model: Preferred remote model name when using an integration.
+    :param stream: Whether the provider should stream responses when supported.
+    :param provider_options: Mapping of provider specific configuration values.
+    :param ollama_model: Backwards compatible alias for ``model`` when
+        ``provider`` is omitted and Ollama is desired.
     :param ollama_chat_fn: Alternative chat callable used for testing or
         dependency injection.
     :param chain_of_thought: Request structured reasoning from the model.
+    :param http_post: Optional callable for mocking HTTP interactions in tests.
     :raises OllamaUnavailableError: If the Ollama backend cannot be reached.
+    :raises ProviderUnavailableError: When the selected provider is not
+        correctly configured.
     :return: A :class:`Plan` describing the derived steps.
     """
 
@@ -121,14 +132,21 @@ def generate_plan(
 
     summary = _derive_summary(normalized)
 
-    if ollama_model:
-        raw_plan = request_plan_from_ollama(
+    resolved_provider = provider or ("ollama" if ollama_model else "heuristic")
+    resolved_model = model or ollama_model
+    options = dict(provider_options or {})
+
+    if resolved_provider and resolved_provider.lower() != "heuristic":
+        raw_plan = request_plan_from_provider(
+            resolved_provider,
             normalized,
-            model=ollama_model,
-            stream=stream,
-            chat_fn=ollama_chat_fn,
+            model=resolved_model,
             termux=environment_is_termux,
             chain_of_thought=chain_of_thought,
+            stream=stream,
+            options=options,
+            chat_fn=ollama_chat_fn if resolved_provider == "ollama" else None,
+            http_post=http_post,
         )
         parsed_plan = _parse_plan_json(raw_plan)
         if parsed_plan:
