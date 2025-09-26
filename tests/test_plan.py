@@ -4,15 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from terdex.cli import AppConfig, generate_plan
+from terdex.cli import AppConfig, Plan, PlanStep, generate_plan
 from terdex.ollama_support import OllamaUnavailableError
 
 
 def test_generate_plan_basic():
     description = "create api endpoint. add tests. update docs."
     plan = generate_plan(description)
-    assert plan[0].startswith("Step 1: Create api endpoint")
-    assert any("Environment" in step for step in plan)
+    assert isinstance(plan, Plan)
+    assert plan.steps[0].title.startswith("Create api endpoint")
+    assert plan.environment_note.startswith("Environment:")
 
 
 def test_config_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -30,11 +31,11 @@ def test_config_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_detect_termux(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("TERMUX_VERSION", "0.118")
     plan = generate_plan("simple step")
-    assert plan[-1].startswith("Environment: Detected Termux")
+    assert plan.environment_note.startswith("Environment: Detected Termux")
 
     monkeypatch.delenv("TERMUX_VERSION")
     plan = generate_plan("simple step")
-    assert "Non-Termux" in plan[-1]
+    assert "Non-Termux" in plan.environment_note
 
 
 def test_generate_plan_with_stubbed_ollama():
@@ -50,9 +51,8 @@ def test_generate_plan_with_stubbed_ollama():
         ollama_chat_fn=fake_chat,
     )
 
-    assert plan[0] == "Step 1: Gather tools"
-    assert plan[1] == "Step 2: Run build"
-    assert plan[-1].startswith("Environment:")
+    assert [step.title for step in plan.steps] == ["Gather tools", "Run build"]
+    assert plan.environment_note.startswith("Environment:")
 
 
 def test_generate_plan_ollama_missing():
@@ -90,6 +90,11 @@ def test_generate_plan_with_json_payload():
         ollama_chat_fn=fake_chat,
     )
 
-    assert plan[0].startswith("Step 1: Update package lists")
-    assert "Command: pkg update -y" in plan[0]
-    assert plan[-1] == "Environment: Termux detected"
+    assert plan.summary == "Install dependencies"
+    assert plan.steps[0] == PlanStep(
+        title="Update package lists",
+        command="pkg update -y",
+        notes="Ensure repositories are reachable",
+    )
+    assert plan.steps[1].title == "Install git"
+    assert plan.environment_note == "Environment: Termux detected"

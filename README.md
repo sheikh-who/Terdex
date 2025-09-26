@@ -4,7 +4,7 @@ Terdex is a lightweight, localhost-friendly helper designed as a Termux-oriented
 
 ## Features
 
-- **Termux-aware planning** – Quickly turn a natural language description into a sequenced plan while highlighting Android/Termux constraints.
+- **Termux-aware planning** – Quickly turn a natural language description into a sequenced plan while highlighting Android/Termux constraints and summarizing the requested task.
 - **Configurable playbooks** – Define repeatable shell command sequences in a `.terdex.json` file and execute them on demand.
 - **Self-hosted and offline** – No remote services are required; the CLI runs locally and is suitable for Termux or any POSIX shell.
 
@@ -53,6 +53,12 @@ Add `--stream` to the command to print the model's response incrementally as it
 arrives from the local Ollama runtime. Pass `--chain-of-thought` if you want the
 model to think step-by-step before emitting the final JSON payload (useful for
 more complex tasks).
+
+Produce machine-readable output instead of the formatted summary and step list:
+
+```bash
+terdex plan --json "bootstrap a python project"
+```
 
 Run a playbook defined in `.terdex.json`:
 

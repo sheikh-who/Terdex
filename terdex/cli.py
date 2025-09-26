@@ -94,6 +94,65 @@ def detect_termux() -> bool:
     return "TERMUX_VERSION" in os.environ or "com.termux" in os.environ.get("PREFIX", "")
 
 
+@dataclass
+class PlanStep:
+    """A single actionable step in a generated plan."""
+
+    title: str
+    command: Optional[str] = None
+    notes: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, str]:
+        data: Dict[str, str] = {"title": self.title}
+        if self.command:
+            data["command"] = self.command
+        if self.notes:
+            data["notes"] = self.notes
+        return data
+
+    def format_lines(self, index: int) -> List[str]:
+        lines = [f" - Step {index}: {self.title}"]
+        if self.command:
+            lines.append(f"   Command: {self.command}")
+        if self.notes:
+            lines.append(f"   Notes: {self.notes}")
+        return lines
+
+
+@dataclass
+class Plan:
+    """A structured representation of an execution plan."""
+
+    summary: str
+    steps: List[PlanStep]
+    environment_note: str
+
+    def truncated(self, max_steps: Optional[int]) -> "Plan":
+        if max_steps is None or max_steps >= len(self.steps):
+            return Plan(self.summary, list(self.steps), self.environment_note)
+        return Plan(self.summary, self.steps[:max_steps], self.environment_note)
+
+    def is_empty(self) -> bool:
+        return not self.steps and not self.summary.strip()
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "summary": self.summary,
+            "steps": [step.to_dict() for step in self.steps],
+            "environment": self.environment_note,
+        }
+
+    def formatted_output(self) -> List[str]:
+        lines: List[str] = []
+        for index, step in enumerate(self.steps, start=1):
+            lines.extend(step.format_lines(index))
+        if self.environment_note:
+            if lines:
+                lines.append("")
+            lines.append(self.environment_note)
+        return lines
+
+
 def generate_plan(
     description: str,
     max_steps: Optional[int] = None,
@@ -102,15 +161,16 @@ def generate_plan(
     stream: bool = False,
     ollama_chat_fn: Optional[Callable[..., object]] = None,
     chain_of_thought: bool = False,
-) -> List[str]:
+) -> Plan:
     """Generate an execution plan from a plain language description."""
 
     normalized = description.replace("\n", " ").strip()
-    if not normalized:
-        return []
-
     environment_is_termux = detect_termux()
     environment_message = _environment_message(environment_is_termux)
+    if not normalized:
+        return Plan(summary="", steps=[], environment_note=environment_message)
+
+    summary = _derive_summary(normalized)
 
     if ollama_model:
         raw_plan = request_plan_from_ollama(
@@ -121,24 +181,32 @@ def generate_plan(
             termux=environment_is_termux,
             chain_of_thought=chain_of_thought,
         )
-        steps, ollama_environment = _parse_plan_json(raw_plan)
-        if not steps:
+        parsed_plan = _parse_plan_json(raw_plan)
+        if parsed_plan:
+            if not parsed_plan.summary:
+                parsed_plan.summary = summary
+            if not parsed_plan.environment_note:
+                parsed_plan.environment_note = environment_message
+            plan = parsed_plan
+        else:
             steps = _normalize_ollama_output(raw_plan)
-        if not steps:
-            steps = _fallback_steps(normalized)
-        if ollama_environment:
-            environment_message = ollama_environment
+            if not steps:
+                steps = _fallback_steps(normalized)
+            plan = Plan(summary=summary, steps=steps, environment_note=environment_message)
     else:
         steps = _fallback_steps(normalized)
+        plan = Plan(summary=summary, steps=steps, environment_note=environment_message)
 
     if max_steps:
-        steps = steps[:max_steps]
+        plan = plan.truncated(max_steps)
 
-    steps.append(environment_message)
-    return steps
+    if not plan.environment_note:
+        plan.environment_note = environment_message
+
+    return plan
 
 
-def _fallback_steps(normalized_description: str) -> List[str]:
+def _fallback_steps(normalized_description: str) -> List[PlanStep]:
     sentences = [
         sentence.strip()
         for sentence in normalized_description.replace("?", ".")
@@ -147,74 +215,45 @@ def _fallback_steps(normalized_description: str) -> List[str]:
         if sentence.strip()
     ]
 
-    plan: List[str] = []
+    plan: List[PlanStep] = []
     for index, sentence in enumerate(sentences, start=1):
-        plan.append(f"Step {index}: {sentence[0].upper() + sentence[1:]}")
+        title = _capitalize(sentence)
+        plan.append(PlanStep(title=title))
     return plan
 
 
 _LISTING_PREFIX = re.compile(r"^(?:[-*•]\s*|\d+[).:-]\s*|step\s+\d+[:.-]\s*)", re.I)
 
 
-def _parse_plan_json(raw_plan: str) -> tuple[List[str], Optional[str]]:
+def _parse_plan_json(raw_plan: str) -> Optional[Plan]:
     try:
         payload = json.loads(raw_plan)
     except json.JSONDecodeError:
-        return [], None
+        return None
 
     if not isinstance(payload, dict):
-        return [], None
+        return None
 
-    environment_text: Optional[str] = None
-    if isinstance(payload.get("environment"), str):
-        env_candidate = payload["environment"].strip()
-        if env_candidate:
-            environment_text = (
-                env_candidate
-                if env_candidate.lower().startswith("environment:")
-                else f"Environment: {env_candidate}"
-            )
+    summary_field = payload.get("task_summary")
+    summary = summary_field.strip() if isinstance(summary_field, str) else ""
+
+    environment_text = _normalize_environment_text(payload.get("environment"))
 
     steps_field = payload.get("steps")
-    if not isinstance(steps_field, list):
-        return [], environment_text
+    steps: List[PlanStep] = []
+    if isinstance(steps_field, list):
+        for entry in steps_field:
+            step = _parse_step_entry(entry)
+            if step:
+                steps.append(step)
 
-    steps: List[str] = []
-    for index, entry in enumerate(steps_field, start=1):
-        title: Optional[str] = None
-        command: Optional[str] = None
-        notes: Optional[str] = None
+    if not steps and not summary and not environment_text:
+        return None
 
-        if isinstance(entry, dict):
-            raw_title = entry.get("title") or entry.get("summary") or entry.get("action")
-            if isinstance(raw_title, str) and raw_title.strip():
-                title = raw_title.strip()
-            raw_command = entry.get("command")
-            if isinstance(raw_command, str) and raw_command.strip():
-                command = raw_command.strip()
-            raw_notes = entry.get("notes") or entry.get("note")
-            if isinstance(raw_notes, str) and raw_notes.strip():
-                notes = raw_notes.strip()
-        elif isinstance(entry, str) and entry.strip():
-            title = entry.strip()
-
-        fragments = [fragment for fragment in [title, command, notes] if fragment]
-        if not fragments:
-            continue
-        formatted = fragments[0]
-        metadata: List[str] = []
-        if command:
-            metadata.append(f"Command: {command}")
-        if notes:
-            metadata.append(f"Notes: {notes}")
-        if metadata:
-            formatted = f"{formatted}; " + "; ".join(metadata)
-        steps.append(f"Step {index}: {formatted}")
-
-    return steps, environment_text
+    return Plan(summary=summary, steps=steps, environment_note=environment_text)
 
 
-def _normalize_ollama_output(raw_plan: str) -> List[str]:
+def _normalize_ollama_output(raw_plan: str) -> List[PlanStep]:
     lines: List[str] = []
     for raw_line in raw_plan.splitlines():
         stripped = raw_line.strip()
@@ -225,10 +264,9 @@ def _normalize_ollama_output(raw_plan: str) -> List[str]:
             continue
         lines.append(stripped)
 
-    normalized: List[str] = []
-    for index, line in enumerate(lines, start=1):
-        formatted = line[0].upper() + line[1:] if line else line
-        normalized.append(f"Step {index}: {formatted}")
+    normalized: List[PlanStep] = []
+    for line in lines:
+        normalized.append(PlanStep(title=_capitalize(line)))
     return normalized
 
 
@@ -242,6 +280,68 @@ def _environment_message(is_termux: Optional[bool] = None) -> str:
     return (
         "Environment: Non-Termux detected. If targeting Termux, ensure commands are `pkg` compatible."
     )
+
+
+def _derive_summary(description: str) -> str:
+    parts = re.split(r"[.!?]", description)
+    for part in parts:
+        cleaned = part.strip()
+        if cleaned:
+            return _capitalize(cleaned)
+    return _capitalize(description[:120].strip())
+
+
+def _normalize_environment_text(value: object) -> str:
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate:
+            return (
+                candidate
+                if candidate.lower().startswith("environment:")
+                else f"Environment: {candidate}"
+            )
+    return ""
+
+
+def _parse_step_entry(entry: object) -> Optional[PlanStep]:
+    if isinstance(entry, dict):
+        title_field = entry.get("title") or entry.get("summary") or entry.get("action")
+        command_field = entry.get("command")
+        notes_field = entry.get("notes") or entry.get("note") or entry.get("details")
+
+        title = _clean_text(title_field)
+        command = _clean_text(command_field)
+        notes = _clean_text(notes_field)
+
+        if not title and command:
+            title = command
+
+        if title:
+            return PlanStep(title=_capitalize(title), command=command, notes=notes)
+        return None
+
+    if isinstance(entry, str):
+        cleaned = _clean_text(entry)
+        if cleaned:
+            return PlanStep(title=_capitalize(cleaned))
+
+    return None
+
+
+def _clean_text(value: object) -> Optional[str]:
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return None
+
+
+def _capitalize(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
 
 
 def execute_playbook(commands: Iterable[str], *, shell: bool = True) -> int:
@@ -313,6 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest="chain_of_thought",
         help="Ask the model to reason step-by-step before returning the JSON plan",
     )
+    plan_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the generated plan as JSON instead of human-readable text",
+    )
 
     run_parser = subparsers.add_parser(
         "run", help="Execute a named playbook from the configuration"
@@ -361,12 +466,18 @@ def command_plan(args: argparse.Namespace) -> int:
     except OllamaUnavailableError as exc:
         print(exc)
         return 1
-    if not plan:
+    if plan.is_empty():
         print("No plan generated. Provide a description.")
         return 1
+    if args.json:
+        print(json.dumps(plan.to_dict(), indent=2))
+        return 0
+
     print("Generated plan:\n")
-    for entry in plan:
-        print(f" - {entry}")
+    if plan.summary:
+        print(f"Summary: {plan.summary}\n")
+    for line in plan.formatted_output():
+        print(line)
     return 0
 
 
